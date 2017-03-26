@@ -152,3 +152,8 @@ pub fn database_file() -> String {
     let database_dir = database_dir();
     return format!("{}/parols.dbrs", database_dir);
 }
+
+pub fn nonce_file() -> String {
+    let database_dir = database_dir();
+    return format!("{}/parols.nonce", database_dir);
+}
