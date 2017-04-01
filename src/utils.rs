@@ -1,31 +1,26 @@
 //! A collection of utils function for parol.rs.
 
-use sodiumoxide::crypto::secretbox;
 use std::io::prelude::*;
 use std::fs;
 use std::error::Error;
 use core::Parols;
 use std::env;
+use blowfish_ecb;
 
 /// Constructs a Key from a String slice ( password ) and return it.
 ///
 /// # Arguments
-/// * `slice` - The slice containing the password ( max 32 length ).
-pub fn key_from_slice(slice: &str) -> secretbox::xsalsa20poly1305::Key {
-    if slice.len() > 32 {
-        panic!("The slice length is more than 32.");
+/// * `slice` - The slice containing the password ( min 4 and max 56 length ).
+pub fn key_from_slice(slice: &str) -> Vec<u8> {
+    if slice.len() < 4 {
+        panic!("The slice length is less than 4.");
     }
 
-    let mut array: [u8; 32] = [0; 32];
-
-    for (index, byte) in slice.as_bytes().iter().enumerate() {
-        array[index] = *byte;
+    if slice.len() > 56 {
+        panic!("The slice length is more than 56.");
     }
 
-    return match secretbox::xsalsa20poly1305::Key::from_slice(&array) {
-        Some(key) => key,
-        None => panic!("Unknown error"),
-    };
+    return slice.as_bytes().to_vec()
 }
 
 /// Write a u8 array to a file. Return Ok(()) if succeed or a String with the Error if
@@ -67,6 +62,7 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, String> {
 /// Load the database and return a ```Parols``` if succeed or a Err(String) if fail.
 ///
 /// # Arguments
+/// * `file`
 /// * `password` - Password of the database.
 pub fn load_database(password: &str) -> Result<Parols, String> {
     let database_crypted = match read_file(&database_file()) {
@@ -74,22 +70,9 @@ pub fn load_database(password: &str) -> Result<Parols, String> {
         Err(err) => return Err(err),
     };
 
-    let nonce = match read_file("nonce") {
-        Ok(nonce) => {
-            match secretbox::xsalsa20poly1305::Nonce::from_slice(&nonce) {
-                Some(nonce) => nonce,
-                None => panic!("Cannot generate nonce !"),
-            }
-        },
-        Err(err) => return Err(err),
-    };
-
     let key = key_from_slice(password);
 
-    let database_decrypted = match secretbox::open(&database_crypted, &nonce, &key) {
-        Ok(database_decrypted) => database_decrypted,
-        Err(err) => panic!(err),
-    };
+    let database_decrypted = blowfish_ecb::decrypt(&key, &database_crypted);
 
     let parols_json = match String::from_utf8(database_decrypted) {
         Ok(parols_json) => parols_json,
@@ -103,20 +86,13 @@ pub fn load_database(password: &str) -> Result<Parols, String> {
 ///
 /// # Arguments
 /// * `parols` - The parols database.
-/// * `nonce` - A nonce (generated from `sodiumoxide::crypto::secretbox::gen_nonce()` or `utils::key_from_slice("password")`).
 /// * `password` - The password the database.
-pub fn save_database(parols: &Parols, nonce: &secretbox::xsalsa20poly1305::Nonce, password: &str) -> Result<(), String> {
+pub fn save_database(parols: &Parols, password: &str) -> Result<(), String> {
     let json = parols.to_json();
     let key = key_from_slice(password);
-    let crypted = secretbox::seal(&json.as_bytes(), &nonce, &key);
-    let nonce = nonce.0;
+    let database_crypted = blowfish_ecb::encrypt(&key, json.as_bytes());
 
-    match write_file(&database_file(), &crypted) {
-        Ok(_) => {},
-        Err(err) => return Err(err),
-    }
-
-    match write_file("nonce", &nonce) {
+    match write_file(&database_file(), &database_crypted) {
         Ok(_) => {},
         Err(err) => return Err(err),
     }

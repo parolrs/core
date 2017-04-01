@@ -11,4 +11,4 @@ doc = false
 serde = "*"
 serde_derive = "*"
 serde_json = "*"
-sodiumoxide = "*"
+blowfish_ecb = { git = "https://github.com/Ogromny/blowfish_ecb.rs" }
